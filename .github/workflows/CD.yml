@@ -1,5 +1,4 @@
-# This workflow deploys the saved artifact from CI after merge to main.
-name: 04 Deploy Workflow
+name: CD 
 
 on:
   workflow_run:
