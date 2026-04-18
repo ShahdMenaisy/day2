@@ -71,20 +71,33 @@ jobs:
       - name: verify the container is working   
         run: docker ps
 
+      # - name: Smoke test deployed app
+      #   # Retry a few times because app startup can take a moment.
+      #   run: |
+      #     for attempt in 1 2 3 4 5; do
+      #       RESPONSE=$(curl --silent "http://127.0.0.1:${APP_PORT}/health")
+      #       if curl --fail --silent "http://127.0.0.1:${APP_PORT}/health"; then
+      #        echo "$RESPONSE"
+      #         exit 0
+      #       fi
+      #       echo "Waiting for app to become ready..."
+      #       sleep 2
+      #     done
+      #     echo "App did not become ready in time."
+      #     exit 1
       - name: Smoke test deployed app
-        # Retry a few times because app startup can take a moment.
         run: |
           for attempt in 1 2 3 4 5; do
-            RESPONSE=$(curl --silent "http://127.0.0.1:${APP_PORT}/health")
-            if curl --fail --silent "http://127.0.0.1:${APP_PORT}/health"; then
-             echo "$RESPONSE"
-              exit 0
-            fi
-            echo "Waiting for app to become ready..."
-            sleep 2
+           RESPONSE=$(curl --fail --silent "http://127.0.0.1:${APP_PORT}/health")
+           if [ $? -eq 0 ]; then
+            echo "$RESPONSE"
+             exit 0
+           fi
+           echo "Waiting for app to become ready..."
+           sleep 2
           done
           echo "App did not become ready in time."
-          exit 1
+          exit 1    
 
       - name: Stop container
         if: always()
