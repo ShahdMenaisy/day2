@@ -8,6 +8,7 @@ on:
     workflows: ["03 Build Artifact Workflow"]
     # Start when the build workflow has completed.
     types: [completed]
+  workflow dispatch:   
 
 env:
   IMAGE_NAME: tiny-health-app
@@ -62,6 +63,12 @@ jobs:
             --name "${CONTAINER_NAME}" \
             -p "${APP_PORT}:8000" \
             "${IMAGE_NAME}:${{ steps.image-tag.outputs.image_tag }}"
+            
+      - name: Show recreated image tag
+        run: echo "Image tag: ${{ steps.image-tag.outputs.image_tag }}"   
+        
+      - name: verify the container is working   
+        run: docker ps
 
       - name: Smoke test deployed app
         # Retry a few times because app startup can take a moment.
