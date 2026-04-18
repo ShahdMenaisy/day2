@@ -82,3 +82,7 @@ jobs:
         run: |
           docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
           docker push "${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${ECR_REGISTRY}/${IMAGE_NAME}:latest"
+          docker push "${ECR_REGISTRY}/${IMAGE_NAME}:latest"
+
+          
