@@ -65,7 +65,8 @@ jobs:
             "${IMAGE_NAME}:${{ steps.image-tag.outputs.image_tag }}"
             
       - name: Show recreated image tag
-        run: echo "Image tag: ${{ steps.image-tag.outputs.image_tag }}"   
+        run: |
+         echo "Image tag: ${{ steps.image-tag.outputs.image_tag }}"   
         
       - name: verify the container is working   
         run: docker ps
