@@ -1,13 +1,12 @@
-name: CD 
-
+name: CD
 on:
-  pull_request:
-    types: [closed]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 env:
-  IMAGE_NAME: tiny-health-app
-  IMAGE_TAR: tiny-health-app.tar
-  ARTIFACT_NAME: tiny-health-app-image
+  IMAGE_NAME: githubactions-repo
   CONTAINER_NAME: tiny-health-container
   APP_PORT: "8000"
 
@@ -17,44 +16,32 @@ permissions:
 
 jobs:
   deploy-package:
-    # Only deploy if CI succeeded AND it's from main branch (merge)
-    if: github.event.pull_request.merged == true
-
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
-          path: downloaded-artifact
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Show downloaded files
-        run: ls -R downloaded-artifact
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Load Docker image
-        run: docker load --input "downloaded-artifact/${IMAGE_TAR}"
-
-      - name: Recreate image tag from build run
-        id: image-tag
+      - name: Pull latest image from ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          BUILD_DATE="$(echo "${{ github.event.workflow_run.created_at }}" | cut -dT -f1)"
-          IMAGE_TAG="${BUILD_DATE}-${{ github.event.workflow_run.id }}"
-          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Show recreated image tag
-        run: |
-         echo "Image tag: ${{ steps.image-tag.outputs.image_tag }}"
+          docker pull "${ECR_REGISTRY}/${IMAGE_NAME}:latest"
+          docker tag "${ECR_REGISTRY}/${IMAGE_NAME}:latest" "${IMAGE_NAME}:latest"
 
       - name: Start container
         run: |
           docker run -d \
             --name "${CONTAINER_NAME}" \
             -p "${APP_PORT}:8000" \
-            "${IMAGE_NAME}:${{ steps.image-tag.outputs.image_tag }}"
+            "${IMAGE_NAME}:latest"
 
       - name: Show running containers
         run: docker ps
