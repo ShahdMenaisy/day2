@@ -49,8 +49,8 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.IMAGE_TAR }}
           retention-days: 7
-      - name: Simulate long CI
-        run: sleep 60
+    #  - name: Simulate long CI
+    #    run: sleep 60
 
   push-to-ecr:
     runs-on: ubuntu-latest
