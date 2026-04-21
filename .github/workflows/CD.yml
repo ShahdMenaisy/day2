@@ -17,50 +17,98 @@ jobs:
   deploy-package:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Pull latest image from ECR
+      - name: Get ECR auth token
+        id: ecr-token
+        run: |
+          TOKEN=$(aws ecr get-login-password --region ${{ secrets.AWS_REGION }})
+          echo "token=${TOKEN}"                        >> "$GITHUB_OUTPUT"
+          echo "registry=${{ steps.login-ecr.outputs.registry }}" >> "$GITHUB_OUTPUT"
+
+      - name: Copy install script to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          source:   "scripts/install-assessment-deps.sh"
+          target:   "/home/${{ secrets.EC2_USER }}/"
+
+      - name: Install dependencies on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            chmod +x /home/${{ secrets.EC2_USER }}/scripts/install-assessment-deps.sh
+            sudo /home/${{ secrets.EC2_USER }}/scripts/install-assessment-deps.sh
+
+
+      - name: Deploy on EC2
+        uses: appleboy/ssh-action@v1.0.3
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          docker pull "${ECR_REGISTRY}/${IMAGE_NAME}:latest"
-          docker tag "${ECR_REGISTRY}/${IMAGE_NAME}:latest" "${IMAGE_NAME}:latest"
+          ECR_REGISTRY:   ${{ steps.ecr-token.outputs.registry }}
+          ECR_TOKEN:      ${{ steps.ecr-token.outputs.token }}
+          IMAGE_NAME:     ${{ env.IMAGE_NAME }}
+          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          APP_PORT:       ${{ env.APP_PORT }}
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          envs:     ECR_REGISTRY,ECR_TOKEN,IMAGE_NAME,CONTAINER_NAME,APP_PORT
+          script: |
+            set -e
 
-      - name: Start container
-        run: |
-          docker run -d \
-            --name "${CONTAINER_NAME}" \
-            -p "${APP_PORT}:8000" \
-            "${IMAGE_NAME}:latest"
+            # Authenticate Docker with the temporary ECR token
+            echo "${ECR_TOKEN}" | docker login \
+              --username AWS \
+              --password-stdin \
+              "${ECR_REGISTRY}"
 
-      - name: Show running containers
-        run: docker ps
+
+            docker pull "${ECR_REGISTRY}/${IMAGE_NAME}:latest"
+
+            ### Remove old container if running, then start fresh
+            docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+
+            docker run -d \
+              --name "${CONTAINER_NAME}" \
+              --restart unless-stopped \
+              -p "${APP_PORT}:8000" \
+              "${ECR_REGISTRY}/${IMAGE_NAME}:latest"
+
+            echo "Running containers:"
+            docker ps
 
       - name: Smoke test deployed app
         run: |
           for attempt in 1 2 3 4 5; do
-            RESPONSE=$(curl --silent "http://127.0.0.1:${APP_PORT}/health" || true)
+            RESPONSE=$(curl --silent \
+              "http://${{ secrets.EC2_HOST }}:${APP_PORT}/health" || true)
             if [ -n "$RESPONSE" ]; then
-              echo "Health response:"
-              echo "$RESPONSE"
+              echo "Health response: $RESPONSE"
               exit 0
             fi
-            echo "Waiting for app to become ready..."
-            sleep 2
+            echo "Attempt $attempt – waiting for app…"
+            sleep 3
           done
           echo "App did not become ready in time."
           exit 1
-
-      - name: Stop container
-        if: always()
-        run: docker rm -f "${CONTAINER_NAME}" || true
