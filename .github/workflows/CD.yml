@@ -3,6 +3,8 @@ on:
     types: [closed]
     branches:
       - main
+  workflow_dispatch:
+     
 
 env:
   IMAGE_NAME: githubactions-repo
